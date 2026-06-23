@@ -2512,3 +2512,85 @@ async def batch_match_resumes(
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ── Resume Direct Edit ────────────────────────────────────────────────────────
+
+@app.post("/api/resume-edit")
+async def resume_edit(
+    file: UploadFile = File(...),
+    jd: str = Form(...),
+    accept_language: str = Header(default="zh-CN"),
+):
+    """Stream an AI-rewritten resume tailored to the provided JD."""
+    lang = "zh" if accept_language.lower().startswith("zh") else "en"
+
+    if not jd.strip():
+        raise HTTPException(400, "jd is required")
+
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, _err("too_large", lang))
+
+    resume_text = await extract_text(raw, file.content_type or "", file.filename or "", lang)
+    if len(resume_text.strip()) < 50:
+        raise HTTPException(422, _err("empty_content", lang))
+
+    safe_resume = _sanitize_input(resume_text[:MAX_CHARS])
+    safe_jd     = _sanitize_input(jd.strip()[:3000])
+
+    if lang == "zh":
+        system = (
+            "你是一位顶级简历优化专家，专注于帮助求职者提升简历的岗位匹配度。\n"
+            "根据目标 JD 对候选人简历进行针对性改写，遵守以下规则：\n"
+            "1. 保留所有真实信息（公司、职位、时间、学校、学历）——不可捏造任何事实\n"
+            "2. 用 STAR 法则重写工作/项目经历的描述\n"
+            "3. 在结果中量化数据（若原简历无数据则保持不变）\n"
+            "4. 将 JD 中的关键技能词自然融入对应经历描述\n"
+            "5. 优化技能栏，与 JD 要求对齐\n"
+            "6. 输出完整的改写后简历，使用 Markdown 格式\n"
+            "7. 每个被修改的条目末尾加 ✨ 标记"
+        )
+        user_msg = (
+            f"目标职位 JD：\n<jd>\n{safe_jd}\n</jd>\n\n"
+            f"原始简历：\n<resume>\n{safe_resume}\n</resume>\n\n"
+            "请输出完整的优化后简历（Markdown 格式）："
+        )
+    else:
+        system = (
+            "You are a top-tier resume optimization expert helping job seekers maximize resume-JD fit.\n"
+            "Rewrite the candidate's resume tailored to the provided JD, following these rules:\n"
+            "1. Preserve all factual information (companies, titles, dates, schools) — never fabricate\n"
+            "2. Rewrite experience bullets using the STAR method\n"
+            "3. Quantify results where possible (if originals have no data, keep as-is)\n"
+            "4. Naturally weave JD keywords into relevant experience descriptions\n"
+            "5. Optimize the skills section to align with JD requirements\n"
+            "6. Output the complete rewritten resume in Markdown format\n"
+            "7. Add ✨ after each modified bullet point"
+        )
+        user_msg = (
+            f"Target Job Description:\n<jd>\n{safe_jd}\n</jd>\n\n"
+            f"Original Resume:\n<resume>\n{safe_resume}\n</resume>\n\n"
+            "Output the complete optimized resume (Markdown format):"
+        )
+
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            status_msg = "正在根据 JD 智能改写你的简历…" if lang == "zh" else "Rewriting your resume to match the JD…"
+            yield f"data: {json.dumps({'type': 'status', 'text': status_msg})}\n\n"
+            async for chunk in _llm_chat_stream(
+                system=system,
+                user_message=user_msg,
+                max_tokens=4096,
+                temperature=0.5,
+            ):
+                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

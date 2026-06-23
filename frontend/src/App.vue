@@ -291,6 +291,17 @@
           <span class="jdm-entry-arr">→</span>
         </button>
 
+        <!-- Resume hot-rewrite entry -->
+        <div class="divider" />
+        <button class="jdm-entry" :class="{ active: mode === 'resumeeditor' }" @click="switchTo('resumeeditor'); showProfile=false">
+          <span class="jdm-entry-ico">🔥</span>
+          <div class="jdm-entry-text">
+            <span class="jdm-entry-title">{{ t('profile.resumeEdit') }}</span>
+            <span class="jdm-entry-desc">{{ t('profile.resumeEditDesc') }}</span>
+          </div>
+          <span class="jdm-entry-arr">→</span>
+        </button>
+
         <!-- Preset visibility toggle -->
         <div class="divider" />
         <div class="prow">
@@ -332,8 +343,9 @@
   </Transition>
 
   <!-- ── Full-screen overlays — rendered outside .main so position:fixed is viewport-relative ── -->
-  <JdMatch    v-if="mode === 'jdmatch'" @close="switchTo('seeker')" />
-  <BatchMatch v-if="mode === 'batch'"   @close="switchTo('seeker')" />
+  <JdMatch      v-if="mode === 'jdmatch'"     @close="switchTo('seeker')" />
+  <BatchMatch   v-if="mode === 'batch'"       @close="switchTo('seeker')" />
+  <ResumeEditor v-if="mode === 'resumeeditor'" @close="switchTo('seeker')" />
 
   </div><!-- /app-wrap -->
   </Transition>
@@ -346,6 +358,7 @@ import DOMPurify from 'dompurify'
 import LandingPage from './components/LandingPage.vue'
 import JdMatch from './components/JdMatch.vue'
 import BatchMatch from './components/BatchMatch.vue'
+import ResumeEditor from './components/ResumeEditor.vue'
 import { setLocale } from './i18n.js'
 import { CHINA_CITY_GROUPS } from './cities.js'
 

@@ -45,6 +45,8 @@ const messages = {
       jdmatchDesc: '粘贴任意 JD，分析与你简历的契合度',
       batch: '📦 批量筛选 (HR)',
       batchDesc: '批量上传简历，AI 自动评分排名',
+      resumeEdit: '🔥 简历热改写',
+      resumeEditDesc: '上传简历 + JD，AI 直接在文档上改，完成后自由编辑',
     },
     jdm: {
       title: 'JD 精准匹配',
@@ -104,6 +106,8 @@ const messages = {
       jdmatchDesc: 'Paste any JD to analyze how well your resume fits',
       batch: '📦 Batch Screening (HR)',
       batchDesc: 'Upload many resumes, AI ranks them',
+      resumeEdit: '🔥 Hot Resume Rewrite',
+      resumeEditDesc: 'Upload resume + JD, AI rewrites inline — then edit freely',
     },
     jdm: {
       title: 'JD Fit Analyzer',
