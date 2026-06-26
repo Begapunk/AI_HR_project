@@ -2629,7 +2629,12 @@ def _parse_llm_json(text: str) -> dict:
             return json.loads(m.group())
         except json.JSONDecodeError:
             pass
-    return {"score": 60, "summary": "解析异常，请重新分析。", "gaps": [], "questions": []}
+    return {
+        "score": 60, "summary": "解析异常，请重新分析。",
+        "gaps": [], "questions": [],
+        "jd_tags": [], "resume_tags": [],
+        "matched_tags": [], "missing_tags": [], "bonus_tags": [],
+    }
 
 
 _CV_MAX_CHARS  = 4000   # hard payload cap: extracted resume text
@@ -2687,16 +2692,29 @@ async def resume_gap_analyze(
             "你是一位严格的职业面试教练。必须以合法JSON格式输出，不含任何其他文字或代码块标记。\n"
             + _SECURITY_PREAMBLE_ZH
         )
-        schema = ('{\n  "score": <0-100整数>,\n  "summary": "<2句总结>",\n'
-                  '  "gaps": [{"skill":"<技能>","jd_req":"<JD要求>","severity":"high|medium|low"}],\n'
-                  '  "questions": [{"id":"q1","question":"<亲切追问用户是否有真实经历>","gap_skill":"<技能>"}]\n}')
+        schema = (
+            '{\n'
+            '  "score": <0-100整数>,\n'
+            '  "summary": "<2句总结>",\n'
+            '  "gaps": [{"skill":"<技能>","jd_req":"<JD要求>","severity":"high|medium|low"}],\n'
+            '  "questions": [{"id":"q1","question":"<亲切追问用户是否有真实经历>","gap_skill":"<技能>"}],\n'
+            '  "jd_tags": ["<JD核心技能/业务关键词，8-12个，每个不超过6字>"],\n'
+            '  "resume_tags": ["<简历已具备的技术栈/经历关键词，8-12个，每个不超过6字>"],\n'
+            '  "matched_tags": ["<同时出现在JD和简历的标签（jd_tags与resume_tags的交集）>"],\n'
+            '  "missing_tags": ["<JD需要但简历中未体现的关键技能>"],\n'
+            '  "bonus_tags": ["<简历有但JD未明确要求的附加技能，代表候选人额外竞争力>"]\n'
+            '}'
+        )
         user_msg = (
             f"分析简历与JD的匹配度，只输出如下格式JSON（无```标记）：\n{schema}\n\n"
-            f"评分规则（严格执行，保证每次相同输入结果一致）：\n"
-            f"先列出gaps，再按公式计算score：\n"
-            f"  score = 100 - (high级gap数 × 20) - (medium级gap数 × 10) - (low级gap数 × 5)\n"
-            f"  score最低为10，最高为95（简历与JD完全匹配时）\n\n"
-            f"其他要求：gaps最多4条按severity降序；questions最多3条，只针对high/medium的gap追问；score≥85时questions可为[]。\n\n"
+            f"执行顺序：\n"
+            f"① 从JD中提取 jd_tags（核心硬技能+业务词，8-12个）\n"
+            f"② 从简历中提取 resume_tags（已具备技术栈+经历词，8-12个）\n"
+            f"③ 计算 matched_tags = jd_tags ∩ resume_tags（语义匹配，近义词也算）\n"
+            f"④ missing_tags = jd_tags - matched_tags\n"
+            f"⑤ bonus_tags = resume_tags - matched_tags（只选有价值的，最多4个）\n"
+            f"⑥ 确定 gaps（最多4条按severity降序），只针对high/medium的gap生成questions（最多3条）\n"
+            f"⑦ 用公式计算 score = 100-(high×20)-(medium×10)-(low×5)，下限10，上限95\n\n"
             f"<job_description>\n{safe_jd}\n</job_description>\n\n"
             f"<user_cv>\n{safe_resume}\n</user_cv>\n\n"
             f"<user_instruction>请按上述格式输出JSON分析结果。</user_instruction>"
@@ -2706,21 +2724,34 @@ async def resume_gap_analyze(
             "You are a strict career coach. Output ONLY valid JSON without any other text or code fences.\n"
             + _SECURITY_PREAMBLE_EN
         )
-        schema = ('{\n  "score": <int 0-100>,\n  "summary": "<2-sentence summary>",\n'
-                  '  "gaps": [{"skill":"<skill>","jd_req":"<requirement>","severity":"high|medium|low"}],\n'
-                  '  "questions": [{"id":"q1","question":"<friendly follow-up on real experience>","gap_skill":"<skill>"}]\n}')
+        schema = (
+            '{\n'
+            '  "score": <int 0-100>,\n'
+            '  "summary": "<2-sentence summary>",\n'
+            '  "gaps": [{"skill":"<skill>","jd_req":"<requirement>","severity":"high|medium|low"}],\n'
+            '  "questions": [{"id":"q1","question":"<friendly follow-up on real experience>","gap_skill":"<skill>"}],\n'
+            '  "jd_tags": ["<JD core skill/domain keywords, 8-12 items, ≤4 words each>"],\n'
+            '  "resume_tags": ["<resume tech stack/experience keywords, 8-12 items, ≤4 words each>"],\n'
+            '  "matched_tags": ["<tags present in both JD and resume (semantic match ok)>"],\n'
+            '  "missing_tags": ["<required by JD but absent from resume>"],\n'
+            '  "bonus_tags": ["<resume has but JD doesn\'t require, max 4>"]\n'
+            '}'
+        )
         user_msg = (
             f"Analyze resume vs JD. Output ONLY JSON (no ``` fences):\n{schema}\n\n"
-            f"Scoring rules (apply consistently for identical inputs):\n"
-            f"  List gaps first, then compute: score = 100 - (high_count×20) - (medium_count×10) - (low_count×5)\n"
-            f"  Floor at 10, cap at 95.\n\n"
-            f"Other rules: gaps max 4 desc by severity; questions max 3 for high/medium only; questions=[] if score≥85.\n\n"
+            f"Steps: ① extract jd_tags (8-12 core JD keywords) "
+            f"② extract resume_tags (8-12 resume keywords) "
+            f"③ matched_tags = semantic intersection "
+            f"④ missing_tags = jd_tags - matched_tags "
+            f"⑤ bonus_tags = resume_tags - matched_tags (max 4 valuable ones) "
+            f"⑥ gaps (max 4), questions (max 3 for high/medium only) "
+            f"⑦ score = 100-(high×20)-(medium×10)-(low×5), floor 10, cap 95\n\n"
             f"<job_description>\n{safe_jd}\n</job_description>\n\n"
             f"<user_cv>\n{safe_resume}\n</user_cv>\n\n"
             f"<user_instruction>Output the JSON analysis as specified above.</user_instruction>"
         )
 
-    raw_result = await _llm_chat(system=system, user_message=user_msg, max_tokens=1200, temperature=0.0)
+    raw_result = await _llm_chat(system=system, user_message=user_msg, max_tokens=1600, temperature=0.0)
     return _parse_llm_json(raw_result)
 
 

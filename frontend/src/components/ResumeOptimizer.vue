@@ -128,6 +128,13 @@
         </div>
       </div>
 
+      <!-- Tag Collision Panel — 关键词比对图谱 -->
+      <TagCollisionPanel
+        :matched-tags="analysis.matched_tags || []"
+        :missing-tags="analysis.missing_tags || []"
+        :bonus-tags="analysis.bonus_tags || []"
+      />
+
       <div class="ws-split">
         <!-- Left: Original preview -->
         <div class="ws-left">
@@ -202,6 +209,7 @@ import DOMPurify from 'dompurify'
 import '@wangeditor/editor/dist/css/style.css'
 import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 import FloatingCopilot from './FloatingCopilot.vue'
+import TagCollisionPanel from './TagCollisionPanel.vue'
 
 defineEmits(['close'])
 
@@ -289,10 +297,15 @@ async function startAnalysis() {
     }
     const data = await resp.json()
     analysis.value = {
-      score:     data.score ?? 60,
-      summary:   data.summary ?? '',
-      gaps:      data.gaps ?? [],
-      questions: data.questions ?? [],
+      score:        data.score ?? 60,
+      summary:      data.summary ?? '',
+      gaps:         data.gaps ?? [],
+      questions:    data.questions ?? [],
+      jd_tags:      data.jd_tags ?? [],
+      resume_tags:  data.resume_tags ?? [],
+      matched_tags: data.matched_tags ?? [],
+      missing_tags: data.missing_tags ?? [],
+      bonus_tags:   data.bonus_tags ?? [],
     }
     // Init answers map
     const init = {}
@@ -315,12 +328,19 @@ async function startAnalysis() {
 // ── Copilot conversation init ─────────────────────────────────────────
 function initCopilotConversation() {
   copilotMessages.value = []
-  const qs = analysis.value.questions
+  const qs      = analysis.value.questions
+  const missing = analysis.value.missing_tags || []
+  const matched = analysis.value.matched_tags || []
 
   const scoreWord = analysis.value.score >= 80 ? '不错' : analysis.value.score >= 60 ? '中等' : '偏低'
-  pushAi(
-    `分析完成！你的简历与 JD 的综合匹配得分为 **${analysis.value.score} 分**（${scoreWord}匹配）。\n\n${analysis.value.summary}`
-  )
+
+  // Greeting: score + summary + tag snapshot
+  let greeting = `分析完成！你的简历与 JD 的综合匹配得分为 **${analysis.value.score} 分**（${scoreWord}匹配）。\n\n${analysis.value.summary}`
+  if (matched.length)
+    greeting += `\n\n✅ **已命中关键词**（绿色）：${matched.slice(0, 5).join('、')}${matched.length > 5 ? '…' : ''}`
+  if (missing.length)
+    greeting += `\n\n🔴 **缺失关键词**（红色警示）：${missing.slice(0, 5).join('、')}${missing.length > 5 ? '…' : ''}\n我会针对这些缺口逐一追问。`
+  pushAi(greeting)
 
   if (qs.length === 0) {
     setTimeout(() => {
@@ -336,14 +356,22 @@ function initCopilotConversation() {
 }
 
 function askQuestion(idx) {
-  const qs = analysis.value.questions
+  const qs      = analysis.value.questions
+  const missing = analysis.value.missing_tags || []
   if (idx >= qs.length) {
     pushAi('所有问题已回答完毕！🎉 点击下方按钮，开始生成你的专属优化简历。')
     copilotPhase.value = 'ready'
     return
   }
   copilotQIndex.value = idx
-  pushAi(qs[idx].question)
+  const q = qs[idx]
+  // If this question's gap_skill matches a red (missing) tag, add a visual callout
+  const isRedTag = missing.some(t =>
+    t.toLowerCase().includes((q.gap_skill || '').toLowerCase()) ||
+    (q.gap_skill || '').toLowerCase().includes(t.toLowerCase())
+  )
+  const prefix = isRedTag ? `🔴【缺失标签 · ${q.gap_skill}】` : ''
+  pushAi(prefix + q.question)
   copilotPhase.value = 'questioning'
 }
 
