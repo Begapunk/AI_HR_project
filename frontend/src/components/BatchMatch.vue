@@ -380,13 +380,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { ScatterChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, MarkAreaComponent, MarkLineComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
-
-use([CanvasRenderer, ScatterChart, GridComponent, TooltipComponent, MarkAreaComponent, MarkLineComponent])
 
 const emit = defineEmits(['close'])
 const { locale } = useI18n()
