@@ -449,7 +449,7 @@ onUnmounted(() => { cancelAnimationFrame(rafCanvas); cancelAnimationFrame(rafCur
 .err-fade-enter-from,.err-fade-leave-to { opacity: 0; transform: translateY(-8px); }
 
 /* Panels */
-.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; }
 @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
 
 .panel {
