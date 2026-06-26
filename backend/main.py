@@ -2214,10 +2214,24 @@ async def batch_match_resumes(
     plus_skills: str = Form(default=""),
     education_tier: int = Form(default=0),
     headcount: int = Form(default=3),
+    weight_edu: float = Form(default=0),
+    weight_skill: float = Form(default=0),
+    weight_proj: float = Form(default=0),
     accept_language: str = Header(default="zh-CN"),
 ):
     """Batch resume screening with three-stage AI ranking. SSE streaming."""
     lang = "zh" if accept_language.lower().startswith("zh") else "en"
+
+    # Custom weight vector: user sliders (edu, skill, proj) → 5-dim weights
+    # skill → skill_match(60%) + experience_fit(40%)
+    # edu   → education_fit(90%) + overall_quality(10%)
+    # proj  → project_relevance(100%)
+    _custom_w: list[float] | None = None
+    if weight_edu + weight_skill + weight_proj > 0:
+        ws = max(weight_skill, 0) / 100
+        we = max(weight_edu,   0) / 100
+        wp = max(weight_proj,  0) / 100
+        _custom_w = [ws * 0.6, we * 0.9, ws * 0.4, wp, we * 0.1]
 
     if len(files) > BATCH_MAX_FILES:
         msg = f"单次最多上传 {BATCH_MAX_FILES} 份简历" if lang == "zh" else f"Maximum {BATCH_MAX_FILES} files per batch"
@@ -2373,8 +2387,10 @@ async def batch_match_resumes(
             for idx, score_result in results:
                 if score_result:
                     screened[idx]["stage_b"] = score_result
-                    # Weighted overall score
-                    if "实习" in job_title or "intern" in job_title.lower():
+                    # Weighted overall score — custom weights take priority
+                    if _custom_w:
+                        w = _custom_w
+                    elif "实习" in job_title or "intern" in job_title.lower():
                         w = [0.30, 0.10, 0.20, 0.25, 0.15]
                     elif len(must_list) >= 4:
                         w = [0.45, 0.10, 0.20, 0.15, 0.10]

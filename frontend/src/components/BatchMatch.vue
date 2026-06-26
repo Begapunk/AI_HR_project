@@ -145,6 +145,38 @@
           </div>
         </div>
 
+        <!-- Weight engine panel -->
+        <div class="weight-panel ai-in" style="--d:.18s">
+          <div class="wp-hd">
+            <span class="wp-ico">⚖️</span>
+            <div>
+              <div class="wp-title">{{ locale === 'zh' ? 'AI 评分权重偏好' : 'AI Scoring Weights' }}</div>
+              <div class="wp-hint">{{ locale === 'zh' ? '调整三个维度的相对重要性，拉动一个另两个自动联动' : 'Adjust relative importance — moving one auto-scales the others' }}</div>
+            </div>
+          </div>
+          <div class="wp-sliders">
+            <div v-for="dim in weightDims" :key="dim.key" class="ws-row">
+              <div class="ws-meta">
+                <span class="ws-label">{{ locale === 'zh' ? dim.label : dim.labelEn }}</span>
+                <span class="ws-val" :style="{color: dim.color}">{{ weights[dim.key] }}%</span>
+              </div>
+              <input
+                class="ws-range"
+                type="range" min="5" max="90" step="1"
+                v-model.number="weights[dim.key]"
+                @input="adjustWeights(dim.key)"
+                :style="{'--clr': dim.color, '--pct': weights[dim.key] + '%'}"
+              />
+              <div class="ws-track-labels"><span>5%</span><span>90%</span></div>
+            </div>
+          </div>
+          <div class="wp-total">
+            <span v-for="dim in weightDims" :key="dim.key" class="wp-chip" :style="{background: dim.color + '22', color: dim.color, borderColor: dim.color + '44', flex: weights[dim.key]}">
+              {{ locale === 'zh' ? dim.label : dim.labelEn }} {{ weights[dim.key] }}%
+            </span>
+          </div>
+        </div>
+
         <!-- Review card -->
         <div class="review-card ai-in" style="--d:.22s">
           <div class="review-hd">{{ locale === 'zh' ? '📋 确认信息' : '📋 Confirmation' }}</div>
@@ -249,6 +281,18 @@
           </div>
         </div>
 
+        <!-- Quadrant scatter chart -->
+        <div v-if="hasChartData" class="quadrant-wrap ai-in" style="--d:.1s">
+          <div class="qd-hd">
+            <span class="qd-ico">🎯</span>
+            <div>
+              <div class="qd-title">{{ locale === 'zh' ? '候选人分布四象限图' : 'Candidate Quadrant Map' }}</div>
+              <div class="qd-hint">{{ locale === 'zh' ? '右上角象限为优先推荐区，悬浮散点查看详情' : 'Top-right quadrant = priority zone. Hover for details.' }}</div>
+            </div>
+          </div>
+          <v-chart class="qd-chart" :option="quadrantOption" autoresize />
+        </div>
+
         <!-- Cutoff analysis -->
         <div v-if="summary && summary.cutoff_analysis" class="cutoff-card ai-in" style="--d:.12s">
           <span class="cutoff-icon">✂</span>
@@ -336,6 +380,13 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+import { ScatterChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, MarkAreaComponent, MarkLineComponent } from 'echarts/components'
+import VChart from 'vue-echarts'
+
+use([CanvasRenderer, ScatterChart, GridComponent, TooltipComponent, MarkAreaComponent, MarkLineComponent])
 
 const emit = defineEmits(['close'])
 const { locale } = useI18n()
@@ -371,6 +422,33 @@ const req = ref({
   headcount: 3,
 })
 const jdFocus = ref(false)
+
+// ── Weight engine ─────────────────────────────────────────────
+const weights = ref({ edu: 20, skill: 50, proj: 30 })
+
+function adjustWeights(changedKey) {
+  const changed = weights.value[changedKey]
+  const clamped = Math.max(5, Math.min(90, changed))
+  weights.value[changedKey] = clamped
+  const others = Object.keys(weights.value).filter(k => k !== changedKey)
+  const remaining = 100 - clamped
+  const curSum = others.reduce((s, k) => s + weights.value[k], 0)
+  if (curSum === 0) {
+    const each = Math.round(remaining / others.length)
+    others.forEach((k, i) => { weights.value[k] = i === others.length - 1 ? remaining - each * (others.length - 1) : each })
+  } else {
+    others.forEach(k => { weights.value[k] = Math.round(weights.value[k] / curSum * remaining) })
+    // Fix rounding drift
+    const diff = 100 - Object.values(weights.value).reduce((s, v) => s + v, 0)
+    if (diff !== 0) weights.value[others[others.length - 1]] += diff
+  }
+}
+
+const weightDims = [
+  { key: 'skill', label: '专业技能', labelEn: 'Professional Skills', color: '#818cf8' },
+  { key: 'proj',  label: '项目经验', labelEn: 'Project Experience',  color: '#34d399' },
+  { key: 'edu',   label: '学历与潜力', labelEn: 'Education & Potential', color: '#c084fc' },
+]
 
 const canStart = computed(() =>
   files.value.length > 0 &&
@@ -409,6 +487,9 @@ async function run() {
     fd.append('plus_skills', req.value.plusSkills)
     fd.append('education_tier', String(req.value.eduTier))
     fd.append('headcount', String(req.value.headcount))
+    fd.append('weight_edu',   String(weights.value.edu))
+    fd.append('weight_skill', String(weights.value.skill))
+    fd.append('weight_proj',  String(weights.value.proj))
 
     const resp = await fetch(`${API_BASE}/api/batch-match`, {
       method: 'POST',
@@ -504,6 +585,91 @@ function barColor(v) {
   if (v >= 60) return 'bar-mid'
   return 'bar-low'
 }
+
+// ── Quadrant chart option ─────────────────────────────────────
+const quadrantOption = computed(() => {
+  const threshold = 60
+  const q1 = [], rest = []
+  for (const c of candidates.value) {
+    const sb = c.score_breakdown || c.stage_b || {}
+    const x = sb.skill_match ?? null
+    const y = sb.education_fit ?? null
+    if (x === null || y === null) continue
+    const pt = { name: c.name || c.raw_filename, value: [x, y, c.overall_score] }
+    if (x >= threshold && y >= threshold) q1.push(pt)
+    else rest.push(pt)
+  }
+  return {
+    backgroundColor: 'transparent',
+    grid: { left: 56, right: 24, top: 20, bottom: 48 },
+    xAxis: {
+      name: locale.value === 'zh' ? '技能匹配' : 'Skill Match',
+      nameLocation: 'middle', nameGap: 32,
+      min: 0, max: 100, interval: 20,
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,.15)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(255,255,255,.05)' } },
+      axisLabel: { color: '#475569', fontSize: 11 },
+      nameTextStyle: { color: '#64748b', fontSize: 11 },
+    },
+    yAxis: {
+      name: locale.value === 'zh' ? '学历潜力' : 'Education Fit',
+      nameLocation: 'middle', nameGap: 40,
+      min: 0, max: 100, interval: 20,
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,.15)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(255,255,255,.05)' } },
+      axisLabel: { color: '#475569', fontSize: 11 },
+      nameTextStyle: { color: '#64748b', fontSize: 11 },
+    },
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(5,5,16,.92)',
+      borderColor: 'rgba(255,255,255,.1)',
+      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      formatter: p => `<b>${p.data.name}</b><br/>技能: ${p.data.value[0]} · 学历: ${p.data.value[1]}<br/>综合得分: <b>${p.data.value[2]}%</b>`,
+    },
+    series: [
+      {
+        name: 'top',
+        type: 'scatter',
+        data: q1,
+        symbolSize: 14,
+        itemStyle: { color: '#34d399', shadowBlur: 12, shadowColor: 'rgba(52,211,153,.6)' },
+        emphasis: { itemStyle: { shadowBlur: 22, shadowColor: 'rgba(52,211,153,.9)' } },
+        markArea: {
+          silent: true,
+          itemStyle: { color: 'rgba(52,211,153,.06)', borderColor: 'rgba(52,211,153,.18)', borderWidth: 1 },
+          label: {
+            show: true,
+            formatter: locale.value === 'zh' ? '⭐ 优先面试区\nTop Candidates' : '⭐ Top Candidates',
+            color: 'rgba(52,211,153,.55)', fontSize: 11, fontWeight: 700, lineHeight: 18,
+          },
+          data: [[{ coord: [threshold, threshold] }, { coord: [100, 100] }]],
+        },
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { color: 'rgba(255,255,255,.12)', type: 'dashed', width: 1 },
+          data: [{ xAxis: threshold }, { yAxis: threshold }],
+        },
+      },
+      {
+        name: 'others',
+        type: 'scatter',
+        data: rest,
+        symbolSize: 10,
+        itemStyle: { color: 'rgba(100,116,139,.65)' },
+        emphasis: { itemStyle: { color: '#94a3b8', shadowBlur: 8, shadowColor: 'rgba(148,163,184,.4)' } },
+      },
+    ],
+  }
+})
+
+const hasChartData = computed(() =>
+  candidates.value.some(c => {
+    const sb = c.score_breakdown || c.stage_b || {}
+    return sb.skill_match != null && sb.education_fit != null
+  })
+)
 
 function copyReport() {
   let text = `=== ${locale.value === 'zh' ? '批量筛选报告' : 'Batch Screening Report'} ===\n\n`
@@ -943,6 +1109,67 @@ function handleClose() {
   transition: color .35s, transform .4s cubic-bezier(.34,1.56,.64,1);
 }
 .candidate-card:hover .cc-expand-hint { color: rgba(255,255,255,.4); transform: scale(1.25); }
+
+/* ── Weight panel ── */
+.weight-panel {
+  background: rgba(139,92,246,.05);
+  border: 1px solid rgba(139,92,246,.2);
+  border-radius: 18px; padding: 22px 22px 18px; margin-bottom: 16px;
+}
+.wp-hd { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+.wp-ico { font-size: 1.3rem; }
+.wp-title { font-size: .88rem; font-weight: 700; color: #f1f5f9; letter-spacing: -.01em; }
+.wp-hint { font-size: .71rem; color: #64748b; margin-top: 2px; line-height: 1.5; }
+.wp-sliders { display: flex; flex-direction: column; gap: 18px; }
+
+.ws-row { display: flex; flex-direction: column; gap: 5px; }
+.ws-meta { display: flex; justify-content: space-between; align-items: center; }
+.ws-label { font-size: .78rem; font-weight: 600; color: #94a3b8; letter-spacing: .02em; }
+.ws-val { font-size: .88rem; font-weight: 800; letter-spacing: -.02em; }
+
+/* ── Range input deep styling ── */
+.ws-range {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px; border-radius: 3px; outline: none; cursor: pointer;
+  background: linear-gradient(to right, var(--clr) 0%, var(--clr) var(--pct), rgba(255,255,255,.1) var(--pct), rgba(255,255,255,.1) 100%);
+  transition: background .15s;
+}
+.ws-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--clr);
+  border: 2px solid rgba(5,5,16,.8);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--clr) 60%, transparent);
+  cursor: grab; transition: transform .2s, box-shadow .2s;
+}
+.ws-range::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.25); box-shadow: 0 0 16px color-mix(in srgb, var(--clr) 80%, transparent); }
+.ws-range::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(5,5,16,.8);
+  background: var(--clr); box-shadow: 0 0 8px color-mix(in srgb, var(--clr) 60%, transparent); cursor: grab;
+}
+.ws-track-labels { display: flex; justify-content: space-between; font-size: .62rem; color: #334155; }
+
+.wp-total {
+  display: flex; gap: 6px; margin-top: 18px; border-top: 1px solid rgba(255,255,255,.06); padding-top: 14px;
+}
+.wp-chip {
+  display: flex; align-items: center; justify-content: center;
+  padding: 5px 8px; border-radius: 8px; border: 1px solid;
+  font-size: .68rem; font-weight: 700; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0; transition: flex .4s cubic-bezier(0.22,1,0.36,1);
+}
+
+/* ── Quadrant chart ── */
+.quadrant-wrap {
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07);
+  border-radius: 18px; padding: 18px 20px 14px; margin-bottom: 16px;
+}
+.qd-hd { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.qd-ico { font-size: 1.3rem; }
+.qd-title { font-size: .88rem; font-weight: 700; color: #f1f5f9; letter-spacing: -.01em; }
+.qd-hint { font-size: .71rem; color: #64748b; margin-top: 2px; }
+.qd-chart { width: 100%; height: 320px; }
 
 /* ── Responsive ── */
 @media (max-width: 600px) {
