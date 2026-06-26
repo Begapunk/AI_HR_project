@@ -682,15 +682,15 @@ onBeforeUnmount(()=>{
 .si.done{color:#34d399}
 .si-arrow{color:#1e293b}
 
-.ro-body{position:relative;z-index:10;max-width:1100px;margin:0 auto;padding:52px 24px 100px}
+.ro-body{position:relative;z-index:10;width:100%;max-width:1200px;margin:0 auto;padding:72px 32px 100px;box-sizing:border-box}
 
-.ro-hero{text-align:center;margin-bottom:40px}
+.ro-hero{text-align:center;margin-bottom:40px;padding-top:8px}
 .hero-tag{display:inline-flex;align-items:center;gap:8px;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#818cf8;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);padding:5px 15px;border-radius:20px;margin-bottom:24px}
 .tag-dot{width:6px;height:6px;border-radius:50%;background:#818cf8;animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}
-.ro-h1{font-size:clamp(2rem,5.5vw,3.6rem);font-weight:800;line-height:1.1;letter-spacing:-.04em;margin:0 0 16px}
+.ro-h1{font-size:clamp(2rem,5.5vw,3.6rem);font-weight:800;line-height:1.25;letter-spacing:-.04em;margin:0 0 16px;padding:.1em 0}
 .h1-plain{color:#f1f5f9}
-.h1-grad{display:inline-block;background:linear-gradient(135deg,#818cf8 0%,#c084fc 50%,#67e8f9 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:grad 6s ease-in-out infinite alternate;background-size:200% 200%}
+.h1-grad{display:inline-block;background:linear-gradient(135deg,#818cf8 0%,#c084fc 50%,#67e8f9 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:grad 6s ease-in-out infinite alternate;background-size:200% 200%;padding:.06em .04em}
 @keyframes grad{from{background-position:0% 50%}to{background-position:100% 50%}}
 .ro-sub{font-size:clamp(.85rem,2vw,.95rem);color:#64748b;max-width:620px;margin:0 auto;line-height:1.75}
 
@@ -698,9 +698,9 @@ onBeforeUnmount(()=>{
 .err-fade-enter-active,.err-fade-leave-active{transition:opacity .35s,transform .35s}
 .err-fade-enter-from,.err-fade-leave-to{opacity:0;transform:translateY(-8px)}
 
-.panels{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
-@media(max-width:700px){.panels{grid-template-columns:1fr}}
-.panel{position:relative;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:24px 22px 20px;overflow:hidden;transition:transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s;will-change:transform}
+.panels{display:flex;justify-content:center;align-items:stretch;gap:22px;width:100%;max-width:1160px;margin:0 auto}
+@media(max-width:700px){.panels{flex-direction:column;max-width:560px}}
+.panel{position:relative;flex:1;min-width:0;max-width:560px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:24px 22px 20px;overflow:hidden;transition:transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s;will-change:transform}
 .panel:hover{box-shadow:0 16px 48px rgba(99,102,241,.14),0 0 0 1px rgba(99,102,241,.2)}
 .panel-glow{position:absolute;inset:-1px;border-radius:23px;z-index:0;background:transparent;transition:background .45s;pointer-events:none}
 .panel:hover .panel-glow{background:linear-gradient(135deg,rgba(99,102,241,.22),rgba(139,92,246,.14),rgba(6,182,212,.16))}
@@ -728,7 +728,7 @@ onBeforeUnmount(()=>{
 .clear-btn{font-size:.7rem;font-weight:600;color:#475569;background:none;border:none;cursor:pointer;padding:2px 8px;border-radius:8px;transition:background .25s,color .25s}
 .clear-btn:hover{background:rgba(255,255,255,.08);color:#94a3b8}
 
-.cta-row{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:32px}
+.cta-row{display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;max-width:1160px;margin:32px auto 0;text-align:center}
 .cta-btn{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;padding:14px 40px;border:none;border-radius:14px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-size:.95rem;font-weight:700;color:#fff;letter-spacing:-.01em;cursor:pointer;box-shadow:0 4px 22px rgba(99,102,241,.38);transition:transform .45s cubic-bezier(0.22,1,0.36,1),box-shadow .45s;will-change:transform}
 .cta-btn:disabled{opacity:.45;cursor:not-allowed;transform:none!important;box-shadow:none!important}
 .cta-btn:not(:disabled):hover{transform:scale(1.03) translateY(-2px);box-shadow:0 8px 32px rgba(99,102,241,.52),0 0 0 3px rgba(99,102,241,.18)}
