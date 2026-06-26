@@ -413,8 +413,9 @@ onUnmounted(() => { cancelAnimationFrame(rafCanvas); cancelAnimationFrame(rafCur
 /* Upload body */
 .re-body {
   position: relative; z-index: 10;
-  max-width: 1100px; margin: 0 auto;
+  width: 100%; max-width: 1100px; margin: 0 auto;
   padding: 56px 24px 100px;
+  box-sizing: border-box;
 }
 
 .re-hero { text-align: center; margin-bottom: 44px; }
@@ -449,11 +450,12 @@ onUnmounted(() => { cancelAnimationFrame(rafCanvas); cancelAnimationFrame(rafCur
 .err-fade-enter-from,.err-fade-leave-to { opacity: 0; transform: translateY(-8px); }
 
 /* Panels */
-.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; }
+.panels { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; box-sizing: border-box; }
 @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
 
 .panel {
   position: relative;
+  min-width: 0; width: 100%; box-sizing: border-box;
   background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.07);
   border-radius: 22px; padding: 24px 22px 20px; overflow: hidden;
   transition: transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s; will-change: transform;

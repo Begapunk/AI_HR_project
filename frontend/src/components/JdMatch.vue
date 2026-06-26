@@ -518,8 +518,9 @@ onUnmounted(() => {
 /* ── Scrollable content wrapper ── */
 .jdm-body {
   position: relative; z-index: 10;
-  max-width: 1140px; margin: 0 auto;
+  width: 100%; max-width: 1140px; margin: 0 auto;
   padding: 64px 24px 100px;
+  box-sizing: border-box;
 }
 
 /* ── Hero ── */
@@ -608,12 +609,14 @@ onUnmounted(() => {
   grid-template-columns: 1fr 1fr;
   gap: 22px;
   width: 100%;
+  box-sizing: border-box;
 }
 @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
 
 /* ── Panel card ── */
 .panel {
   position: relative;
+  min-width: 0; width: 100%; box-sizing: border-box;
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.08);
   border-radius: 22px;
