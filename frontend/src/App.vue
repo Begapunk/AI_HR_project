@@ -302,6 +302,17 @@
           <span class="jdm-entry-arr">→</span>
         </button>
 
+        <!-- Deep resume optimizer entry -->
+        <div class="divider" />
+        <button class="jdm-entry optimizer-entry" :class="{ active: mode === 'optimizer' }" @click="switchTo('optimizer'); showProfile=false">
+          <span class="jdm-entry-ico">🧠</span>
+          <div class="jdm-entry-text">
+            <span class="jdm-entry-title">{{ t('profile.optimizer') }}</span>
+            <span class="jdm-entry-desc">{{ t('profile.optimizerDesc') }}</span>
+          </div>
+          <span class="jdm-entry-arr">→</span>
+        </button>
+
         <!-- Preset visibility toggle -->
         <div class="divider" />
         <div class="prow">
@@ -345,7 +356,8 @@
   <!-- ── Full-screen overlays — rendered outside .main so position:fixed is viewport-relative ── -->
   <JdMatch      v-if="mode === 'jdmatch'"     @close="switchTo('seeker')" />
   <BatchMatch   v-if="mode === 'batch'"       @close="switchTo('seeker')" />
-  <ResumeEditor v-if="mode === 'resumeeditor'" @close="switchTo('seeker')" />
+  <ResumeEditor    v-if="mode === 'resumeeditor'" @close="switchTo('seeker')" />
+  <ResumeOptimizer v-if="mode === 'optimizer'"    @close="switchTo('seeker')" />
 
   </div><!-- /app-wrap -->
   </Transition>
@@ -358,7 +370,8 @@ import DOMPurify from 'dompurify'
 import LandingPage from './components/LandingPage.vue'
 import JdMatch from './components/JdMatch.vue'
 import BatchMatch from './components/BatchMatch.vue'
-import ResumeEditor from './components/ResumeEditor.vue'
+import ResumeEditor    from './components/ResumeEditor.vue'
+import ResumeOptimizer from './components/ResumeOptimizer.vue'
 import { setLocale } from './i18n.js'
 import { CHINA_CITY_GROUPS } from './cities.js'
 
@@ -1113,6 +1126,12 @@ body {
 .batch-entry { background: rgba(139,92,246,.08); border-color: rgba(139,92,246,.18); }
 .batch-entry:hover { background: rgba(139,92,246,.16); border-color: rgba(139,92,246,.35); }
 .batch-entry.active { background: rgba(139,92,246,.18); border-color: rgba(139,92,246,.4); }
+
+.optimizer-entry { background: rgba(16,185,129,.07); border-color: rgba(16,185,129,.18); }
+.optimizer-entry:hover { background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.35); }
+.optimizer-entry.active { background: rgba(16,185,129,.18); border-color: rgba(16,185,129,.4); }
+.optimizer-entry .jdm-entry-title { color: #6ee7b7; }
+.optimizer-entry .jdm-entry-arr { color: #34d399; }
 
 /* --- Keyframes ----------------------------------------------------- */
 @keyframes fadeUp  { from { opacity:0; transform:translateY(32px); } to { opacity:1; transform:translateY(0); } }

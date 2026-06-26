@@ -47,6 +47,8 @@ const messages = {
       batchDesc: '批量上传简历，AI 自动评分排名',
       resumeEdit: '🔥 简历热改写',
       resumeEditDesc: '上传简历 + JD，AI 直接在文档上改，完成后自由编辑',
+      optimizer: '🧠 AI 简历深度优化',
+      optimizerDesc: '差距分析 → 事实追问 → 双屏协同编辑 → PDF/Word 导出',
     },
     jdm: {
       title: 'JD 精准匹配',
@@ -108,6 +110,8 @@ const messages = {
       batchDesc: 'Upload many resumes, AI ranks them',
       resumeEdit: '🔥 Hot Resume Rewrite',
       resumeEditDesc: 'Upload resume + JD, AI rewrites inline — then edit freely',
+      optimizer: '🧠 Deep Resume Optimizer',
+      optimizerDesc: 'Gap analysis → fact Q&A → dual-screen editor → PDF/Word export',
     },
     jdm: {
       title: 'JD Fit Analyzer',
