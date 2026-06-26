@@ -700,7 +700,7 @@ onBeforeUnmount(()=>{
 
 .panels{display:flex;justify-content:center;align-items:stretch;gap:22px;width:100%;max-width:1160px;margin:0 auto}
 @media(max-width:700px){.panels{flex-direction:column;max-width:560px}}
-.panel{position:relative;flex:1;min-width:0;max-width:560px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:24px 22px 20px;overflow:hidden;transition:transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s;will-change:transform}
+.panel{position:relative;flex:1 1 0;min-width:0;max-width:560px;box-sizing:border-box;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:24px 22px 20px;overflow:hidden;transition:transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s;will-change:transform}
 .panel:hover{box-shadow:0 16px 48px rgba(99,102,241,.14),0 0 0 1px rgba(99,102,241,.2)}
 .panel-glow{position:absolute;inset:-1px;border-radius:23px;z-index:0;background:transparent;transition:background .45s;pointer-events:none}
 .panel:hover .panel-glow{background:linear-gradient(135deg,rgba(99,102,241,.22),rgba(139,92,246,.14),rgba(6,182,212,.16))}
@@ -709,7 +709,7 @@ onBeforeUnmount(()=>{
 .panel-title{font-size:.9rem;font-weight:700;color:#f1f5f9}
 .panel-hint{font-size:.72rem;color:#64748b;margin-top:2px}
 
-.drop-zone{display:block;border:1.5px dashed rgba(99,102,241,.3);border-radius:18px;background:rgba(99,102,241,.04);padding:32px 24px;text-align:center;cursor:pointer;transition:all .45s cubic-bezier(0.22,1,0.36,1);position:relative;z-index:1}
+.drop-zone{display:block;width:100%;box-sizing:border-box;border:1.5px dashed rgba(99,102,241,.3);border-radius:18px;background:rgba(99,102,241,.04);padding:32px 24px;text-align:center;cursor:pointer;transition:all .45s cubic-bezier(0.22,1,0.36,1);position:relative;z-index:1}
 .drop-zone:hover{border-color:rgba(99,102,241,.6);background:rgba(99,102,241,.1);transform:scale(1.015) translateY(-2px)}
 .drop-zone.has-file{border-style:solid;border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.05)}
 .dz-cloud,.dz-check{display:block;font-size:2rem;margin-bottom:8px}
@@ -718,7 +718,7 @@ onBeforeUnmount(()=>{
 .dz-main,.dz-name{display:block;font-size:.88rem;font-weight:600;color:#cbd5e1;word-break:break-all}
 .dz-sub{display:block;font-size:.72rem;color:#475569;margin-top:5px}
 
-.ta-wrap{border:1.5px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;max-height:340px;transition:border-color .35s,box-shadow .35s;position:relative;z-index:1}
+.ta-wrap{width:100%;box-sizing:border-box;border:1.5px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;max-height:340px;transition:border-color .35s,box-shadow .35s;position:relative;z-index:1}
 .ta-wrap.focused{border-color:rgba(99,102,241,.5);box-shadow:0 0 0 3px rgba(99,102,241,.12)}
 .glass-ta{display:block;width:100%;height:280px;min-height:120px;max-height:320px;overflow-y:auto;background:rgba(255,255,255,.03);color:#e2e8f0;border:none;outline:none;resize:none;padding:15px 16px;font-size:.86rem;line-height:1.75;font-family:inherit}
 .glass-ta::placeholder{color:#334155}
