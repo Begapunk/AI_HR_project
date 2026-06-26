@@ -698,9 +698,9 @@ onBeforeUnmount(()=>{
 .err-fade-enter-active,.err-fade-leave-active{transition:opacity .35s,transform .35s}
 .err-fade-enter-from,.err-fade-leave-to{opacity:0;transform:translateY(-8px)}
 
-.panels{display:flex;justify-content:center;align-items:stretch;gap:22px;width:100%;max-width:1160px;margin:0 auto}
-@media(max-width:700px){.panels{flex-direction:column;max-width:560px}}
-.panel{position:relative;flex:1 1 0;min-width:0;max-width:560px;box-sizing:border-box;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:24px 22px 20px;overflow:hidden;transition:transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s;will-change:transform}
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:22px;width:100%;max-width:1160px;margin:0 auto}
+@media(max-width:700px){.panels{grid-template-columns:1fr}}
+.panel{position:relative;min-width:0;width:100%;box-sizing:border-box;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:24px 22px 20px;overflow:hidden;transition:transform .55s cubic-bezier(0.22,1,0.36,1),box-shadow .55s;will-change:transform}
 .panel:hover{box-shadow:0 16px 48px rgba(99,102,241,.14),0 0 0 1px rgba(99,102,241,.2)}
 .panel-glow{position:absolute;inset:-1px;border-radius:23px;z-index:0;background:transparent;transition:background .45s;pointer-events:none}
 .panel:hover .panel-glow{background:linear-gradient(135deg,rgba(99,102,241,.22),rgba(139,92,246,.14),rgba(6,182,212,.16))}
