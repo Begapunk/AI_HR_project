@@ -1,9 +1,9 @@
 # Path: offer-catcher/backend/main.py
 """Offer-Catcher API — FastAPI backend with SQLite job store and language-aware AI reports."""
 import asyncio
+import hashlib
 import json
 import os
-import random
 import re
 import sqlite3
 import time
@@ -546,7 +546,7 @@ def score_job(tokens: list[str], job: dict, meta: Optional[dict] = None) -> dict
     """
     ts = set(tokens)
     _key = (job.get("company", "") + job.get("title", "")).encode()
-    base_score = 5 + (abs(hash(_key)) % 6)
+    base_score = 5 + (int(hashlib.md5(_key).hexdigest(), 16) % 6)
 
     # ── Core keyword + tag matching ───────────────────────────────────
     hits = 0.0
@@ -568,10 +568,6 @@ def score_job(tokens: list[str], job: dict, meta: Optional[dict] = None) -> dict
 
     kw_count = max(len(job["keywords"]), 1)
     hit_ratio = min(hits / min(kw_count, 10), 1.0)
-
-    # Gaussian micro-perturbation for near-zero hit cases prevents tied scores.
-    if hit_ratio < 0.05:
-        hit_ratio = max(0.0, hit_ratio + random.gauss(0, 0.015))
 
     keyword_score = int(hit_ratio * 62)
 
@@ -2696,7 +2692,11 @@ async def resume_gap_analyze(
                   '  "questions": [{"id":"q1","question":"<亲切追问用户是否有真实经历>","gap_skill":"<技能>"}]\n}')
         user_msg = (
             f"分析简历与JD的匹配度，只输出如下格式JSON（无```标记）：\n{schema}\n\n"
-            f"要求：gaps最多4条按severity降序；questions最多3条，只问high/medium的gap；score>85时questions可为[]。\n\n"
+            f"评分规则（严格执行，保证每次相同输入结果一致）：\n"
+            f"先列出gaps，再按公式计算score：\n"
+            f"  score = 100 - (high级gap数 × 20) - (medium级gap数 × 10) - (low级gap数 × 5)\n"
+            f"  score最低为10，最高为95（简历与JD完全匹配时）\n\n"
+            f"其他要求：gaps最多4条按severity降序；questions最多3条，只针对high/medium的gap追问；score≥85时questions可为[]。\n\n"
             f"<job_description>\n{safe_jd}\n</job_description>\n\n"
             f"<user_cv>\n{safe_resume}\n</user_cv>\n\n"
             f"<user_instruction>请按上述格式输出JSON分析结果。</user_instruction>"
@@ -2711,13 +2711,16 @@ async def resume_gap_analyze(
                   '  "questions": [{"id":"q1","question":"<friendly follow-up on real experience>","gap_skill":"<skill>"}]\n}')
         user_msg = (
             f"Analyze resume vs JD. Output ONLY JSON (no ``` fences):\n{schema}\n\n"
-            f"Rules: gaps max 4 desc by severity; questions max 3 for high/medium only; questions=[] if score>85.\n\n"
+            f"Scoring rules (apply consistently for identical inputs):\n"
+            f"  List gaps first, then compute: score = 100 - (high_count×20) - (medium_count×10) - (low_count×5)\n"
+            f"  Floor at 10, cap at 95.\n\n"
+            f"Other rules: gaps max 4 desc by severity; questions max 3 for high/medium only; questions=[] if score≥85.\n\n"
             f"<job_description>\n{safe_jd}\n</job_description>\n\n"
             f"<user_cv>\n{safe_resume}\n</user_cv>\n\n"
             f"<user_instruction>Output the JSON analysis as specified above.</user_instruction>"
         )
 
-    raw_result = await _llm_chat(system=system, user_message=user_msg, max_tokens=1200, temperature=0.15)
+    raw_result = await _llm_chat(system=system, user_message=user_msg, max_tokens=1200, temperature=0.0)
     return _parse_llm_json(raw_result)
 
 
@@ -2772,17 +2775,27 @@ async def resume_optimize_final(
 
         system = (
             "你是一位顶级简历优化专家，只使用用户亲口确认的真实信息。\n"
-            "规则：1.保留所有真实信息，绝不捏造 2.只融合用户确认的经历 "
-            "3.只输出body内HTML，无html/head/body外层标签 "
-            "4.使用h1/h2/h3/p/ul/li/strong语义化标签，无style属性 "
-            "5.用STAR法则重写工作/项目经历 6.AI优化的条目末尾加✨\n"
+            "核心规则：\n"
+            "1. 绝不捏造任何事实；只融合 <user_confirmed_facts> 中用户明确确认的内容\n"
+            "2. 对 <user_confirmed_facts> 中每一条「用户确认有真实经历」的事实，\n"
+            "   必须在简历的对应章节（项目经历/实习经历/技能栏）中新增或改写一条具体描述，\n"
+            "   改写后的条目末尾加 ✨ 标记\n"
+            "3. 对「用户表示暂无此经验」的条目，不捏造，保持原文或跳过\n"
+            "4. 只输出 body 内 HTML，无 html/head/body 外层标签\n"
+            "5. 使用 h1/h2/h3/p/ul/li/strong 语义化标签，无 style 属性\n"
+            "6. 用 STAR 法则（情境-任务-行动-结果）重写工作/项目经历条目\n"
             + _SECURITY_PREAMBLE_ZH
         )
         user_msg = (
             f"<job_description>\n{safe_jd}\n</job_description>\n\n"
             f"<user_cv>\n{safe_resume}\n</user_cv>\n\n"
             f"<user_confirmed_facts>\n{facts_text}\n</user_confirmed_facts>\n\n"
-            f"<user_instruction>请将以上真实经历融入简历，输出完整HTML简历内容。</user_instruction>"
+            f"<user_instruction>"
+            f"请严格按以下步骤处理：\n"
+            f"①逐条检查 user_confirmed_facts，找到每条确认事实对应的简历章节\n"
+            f"②在该章节内新增或改写体现该事实的具体条目（STAR格式），末尾加✨\n"
+            f"③输出完整的优化后HTML简历。"
+            f"</user_instruction>"
         )
     else:
         facts_lines = []
@@ -2797,17 +2810,26 @@ async def resume_optimize_final(
 
         system = (
             "You are a top resume expert who only uses user-confirmed facts.\n"
-            "Rules: 1.Preserve all real info, never fabricate 2.Only integrate confirmed experiences "
-            "3.Output only body HTML, no html/head/body wrappers "
-            "4.Use h1/h2/h3/p/ul/li/strong tags, no style attrs "
-            "5.Rewrite bullets with STAR method 6.Add ✨ after AI-optimized bullets\n"
+            "Core rules:\n"
+            "1. Never fabricate facts; only integrate experiences explicitly confirmed in <user_confirmed_facts>\n"
+            "2. For every fact marked 'User confirmed', add or rewrite a specific bullet in the\n"
+            "   matching resume section (projects/internships/skills). End that bullet with ✨\n"
+            "3. For 'User skipped' items: do not invent content — keep original or omit\n"
+            "4. Output only body HTML — no html/head/body wrappers\n"
+            "5. Use h1/h2/h3/p/ul/li/strong tags; no style attributes\n"
+            "6. Rewrite work/project bullets using the STAR method (Situation-Task-Action-Result)\n"
             + _SECURITY_PREAMBLE_EN
         )
         user_msg = (
             f"<job_description>\n{safe_jd}\n</job_description>\n\n"
             f"<user_cv>\n{safe_resume}\n</user_cv>\n\n"
             f"<user_confirmed_facts>\n{facts_text}\n</user_confirmed_facts>\n\n"
-            f"<user_instruction>Integrate the confirmed facts and output the complete HTML resume.</user_instruction>"
+            f"<user_instruction>"
+            f"Follow these steps: "
+            f"① For each confirmed fact in user_confirmed_facts, locate the matching resume section. "
+            f"② Add or rewrite a STAR-format bullet there, appending ✨. "
+            f"③ Output the complete optimized HTML resume."
+            f"</user_instruction>"
         )
 
     async def generate_final() -> AsyncGenerator[str, None]:
@@ -2815,7 +2837,7 @@ async def resume_optimize_final(
             msg = "正在融合真实经历，生成结构化HTML简历…" if lang == "zh" else "Weaving confirmed experiences into HTML resume…"
             yield f"data: {json.dumps({'type': 'status', 'text': msg})}\n\n"
             async for chunk in _llm_chat_stream(
-                system=system, user_message=user_msg, max_tokens=4096, temperature=0.4
+                system=system, user_message=user_msg, max_tokens=4096, temperature=0.2
             ):
                 yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"

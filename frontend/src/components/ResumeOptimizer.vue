@@ -467,7 +467,23 @@ async function streamOptimize() {
           if (streamEl.value) streamEl.value.scrollTop = streamEl.value.scrollHeight
         } else if (obj.type === 'done') {
           copilotPhase.value = 'done'
-          pushAi('✅ 简历生成完成！右侧编辑器可直接修改内容，完成后可导出 PDF / Word。')
+          // Build a change summary so user knows which questions mapped to which edits
+          const qs = analysis.value.questions || []
+          const confirmedEdits = qs
+            .filter(q => copilotAnswers.value[q.id]?.trim())
+            .map(q => `• ${q.gap_skill}：已根据你的回答在简历对应章节新增 / 改写（末尾有 ✨）`)
+          const skipped = qs
+            .filter(q => !copilotAnswers.value[q.id]?.trim())
+            .map(q => `• ${q.gap_skill}：已跳过（未提供经历）`)
+          const summary = [
+            '✅ 简历已生成！改动对照：',
+            ...confirmedEdits,
+            ...skipped,
+            '',
+            '右侧带 ✨ 的条目均为 AI 根据你的回答新增或改写的内容。',
+            '可继续对我说"把第X段改得更有力"随时再调整。',
+          ].join('\n')
+          pushAi(summary)
         } else if (obj.type === 'error') {
           throw new Error(obj.message)
         }
