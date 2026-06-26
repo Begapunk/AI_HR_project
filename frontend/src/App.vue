@@ -375,7 +375,7 @@ import ResumeOptimizer from './components/ResumeOptimizer.vue'
 import { setLocale } from './i18n.js'
 import { CHINA_CITY_GROUPS } from './cities.js'
 
-const API_BASE = 'https://offer-catcher-api.onrender.com'
+const API_BASE = import.meta.env.DEV ? '' : 'https://offer-catcher-api.onrender.com'
 const { t, locale } = useI18n()
 
 // ── Reload detection: F5 / Ctrl+R forces landing page ────────────────────────

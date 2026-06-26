@@ -7,7 +7,7 @@ import random
 import re
 import sqlite3
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 from pydantic import BaseModel
@@ -160,117 +160,118 @@ with open(_DATA_DIR / 'seed_jobs.json', encoding='utf-8') as _f:
     _SEED_JOBS: list[dict] = json.load(_f)
 
 def _init_db() -> None:
-    con = sqlite3.connect(DB_PATH)
-    cur = con.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS jobs (
-            id          INTEGER PRIMARY KEY,
-            company     TEXT NOT NULL,
-            title       TEXT NOT NULL,
-            location    TEXT,
-            salary      TEXT,
-            type        TEXT,
-            tags        TEXT,
-            description TEXT,
-            keywords    TEXT,
-            source_type TEXT DEFAULT 'preset',
-            url         TEXT DEFAULT '',
-            platform    TEXT DEFAULT ''
-        )
-    """)
-    # Migrate existing DBs that lack columns (idempotent)
-    existing = {row[1] for row in cur.execute("PRAGMA table_info(jobs)").fetchall()}
-    for col, dflt in [
-        ("source_type", "'preset'"), ("url", "''"), ("platform", "''"),
-        ("created_at", "''"), ("is_active", "1"), ("full_jd", "''"),
-    ]:
-        if col not in existing:
-            cur.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT DEFAULT {dflt}")
-    con.commit()
-    cur.executemany(
-        "INSERT OR IGNORE INTO jobs "
-        "(id,company,title,location,salary,type,tags,description,keywords,source_type,url) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        [
-            (
-                j["id"],
-                j.get("company", ""),
-                j.get("title", ""),
-                j.get("location", ""),
-                j.get("salary", "竞争性薪酬"),
-                j.get("type", "实习"),
-                json.dumps(j.get("tags", []), ensure_ascii=False),
-                j.get("description", ""),
-                json.dumps(j.get("keywords", []), ensure_ascii=False),
-                j.get("source_type", "preset"),
-                j.get("url", ""),
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        cur = con.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                id          INTEGER PRIMARY KEY,
+                company     TEXT NOT NULL,
+                title       TEXT NOT NULL,
+                location    TEXT,
+                salary      TEXT,
+                type        TEXT,
+                tags        TEXT,
+                description TEXT,
+                keywords    TEXT,
+                source_type TEXT DEFAULT 'preset',
+                url         TEXT DEFAULT '',
+                platform    TEXT DEFAULT ''
             )
-            for j in _SEED_JOBS
-        ],
-    )
-    # Sync pre-generated full_jd into DB for any seed job that has it
-    jd_updates = [
-        (j["full_jd"], j["id"])
-        for j in _SEED_JOBS
-        if (j.get("full_jd") or "").strip()
-    ]
-    if jd_updates:
+        """)
+        # Migrate existing DBs that lack columns (idempotent)
+        existing = {row[1] for row in cur.execute("PRAGMA table_info(jobs)").fetchall()}
+        for col, dflt in [
+            ("source_type", "'preset'"), ("url", "''"), ("platform", "''"),
+            ("created_at", "''"), ("is_active", "1"), ("full_jd", "''"),
+        ]:
+            if col not in existing:
+                cur.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT DEFAULT {dflt}")
+        # Indexes for frequent query patterns
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_is_active   ON jobs(is_active)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_source_type ON jobs(source_type)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_created_at  ON jobs(created_at DESC)")
+        con.commit()
         cur.executemany(
-            "UPDATE jobs SET full_jd = ? WHERE id = ?",
-            jd_updates,
+            "INSERT OR IGNORE INTO jobs "
+            "(id,company,title,location,salary,type,tags,description,keywords,source_type,url) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    j["id"],
+                    j.get("company", ""),
+                    j.get("title", ""),
+                    j.get("location", ""),
+                    j.get("salary", "竞争性薪酬"),
+                    j.get("type", "实习"),
+                    json.dumps(j.get("tags", []), ensure_ascii=False),
+                    j.get("description", ""),
+                    json.dumps(j.get("keywords", []), ensure_ascii=False),
+                    j.get("source_type", "preset"),
+                    j.get("url", ""),
+                )
+                for j in _SEED_JOBS
+            ],
         )
-    con.commit()
-    count = cur.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-    jd_count = len(jd_updates)
-    print(f"[offer-catcher] jobs.db: {count} records synced, {jd_count} with pre-generated JD.")
-    con.close()
+        # Sync pre-generated full_jd into DB for any seed job that has it
+        jd_updates = [
+            (j["full_jd"], j["id"])
+            for j in _SEED_JOBS
+            if (j.get("full_jd") or "").strip()
+        ]
+        if jd_updates:
+            cur.executemany(
+                "UPDATE jobs SET full_jd = ? WHERE id = ?",
+                jd_updates,
+            )
+        con.commit()
+        count = cur.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+        jd_count = len(jd_updates)
+        print(f"[offer-catcher] jobs.db: {count} records synced, {jd_count} with pre-generated JD.")
 
 
 def _upsert_jobs(jobs: list[dict]) -> None:
     today = datetime.now().strftime("%Y-%m-%d")
-    con = sqlite3.connect(DB_PATH)
-    con.executemany(
-        "INSERT OR REPLACE INTO jobs "
-        "(id,company,title,location,salary,type,tags,description,keywords,"
-        "source_type,url,platform,created_at,is_active) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [
-            (
-                j["id"], j["company"], j["title"], j.get("location", ""),
-                j.get("salary", "竞争性薪酬"), j.get("type", "实习"),
-                json.dumps(j.get("tags", []), ensure_ascii=False),
-                j.get("description", ""),
-                json.dumps(j.get("keywords", []), ensure_ascii=False),
-                j.get("source_type", "crawled"),
-                j.get("url", ""),
-                j.get("platform", ""),
-                j.get("created_at", today),
-                j.get("is_active", 1),
-            )
-            for j in jobs
-        ],
-    )
-    con.commit()
-    con.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO jobs "
+            "(id,company,title,location,salary,type,tags,description,keywords,"
+            "source_type,url,platform,created_at,is_active) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                (
+                    j["id"], j["company"], j["title"], j.get("location", ""),
+                    j.get("salary", "竞争性薪酬"), j.get("type", "实习"),
+                    json.dumps(j.get("tags", []), ensure_ascii=False),
+                    j.get("description", ""),
+                    json.dumps(j.get("keywords", []), ensure_ascii=False),
+                    j.get("source_type", "crawled"),
+                    j.get("url", ""),
+                    j.get("platform", ""),
+                    j.get("created_at", today),
+                    j.get("is_active", 1),
+                )
+                for j in jobs
+            ],
+        )
+        con.commit()
 
 
 def _load_all_jobs() -> list[dict]:
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    rows = con.execute("SELECT * FROM jobs WHERE is_active = 1").fetchall()
-    con.close()
-    result = []
-    for row in rows:
-        j = dict(row)
-        j["tags"]     = json.loads(j["tags"]     or "[]")
-        j["keywords"] = json.loads(j["keywords"] or "[]")
-        j["color"]    = COMPANY_COLORS.get(j["company"], "#6B7280")
-        j.setdefault("source_type", "preset")
-        j.setdefault("url",        "")
-        j.setdefault("platform",   "")
-        j.setdefault("created_at", "")
-        j.setdefault("is_active",  1)
-        result.append(j)
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute("SELECT * FROM jobs WHERE is_active = 1").fetchall()
+        result = []
+        for row in rows:
+            j = dict(row)
+            j["tags"]     = json.loads(j["tags"]     or "[]")
+            j["keywords"] = json.loads(j["keywords"] or "[]")
+            j["color"]    = COMPANY_COLORS.get(j["company"], "#6B7280")
+            j.setdefault("source_type", "preset")
+            j.setdefault("url",        "")
+            j.setdefault("platform",   "")
+            j.setdefault("created_at", "")
+            j.setdefault("is_active",  1)
+            result.append(j)
     return result
 
 
@@ -1338,12 +1339,15 @@ def health():
 
 
 @app.post("/api/match")
+@limiter.limit("5/minute")
 async def match_resume(
+    request: Request,
     file: UploadFile = File(...),
     preferred_city: str = Form(default=""),
     preferred_type: str = Form(default=""),
     accept_language: str = Header(default="zh-CN"),
 ):
+    _ = request
     lang = "zh" if accept_language.lower().startswith("zh") else "en"
 
     # ── 1. Type guard ────────────────────────────────────────────────
@@ -1440,27 +1444,26 @@ class JobPostRequest(BaseModel):
 @app.post("/api/jobs", status_code=201)
 async def post_job(body: JobPostRequest):
     today = datetime.now().strftime("%Y-%m-%d")
-    con = sqlite3.connect(DB_PATH)
-    cur = con.cursor()
-    max_id = cur.execute(
-        "SELECT COALESCE(MAX(id),9000) FROM jobs WHERE id >= 9000"
-    ).fetchone()[0]
-    new_id = max_id + 1
-    cur.execute(
-        "INSERT INTO jobs "
-        "(id,company,title,location,salary,type,tags,description,keywords,"
-        "source_type,url,created_at,is_active) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            new_id, body.company, body.title, body.location, body.salary, body.type,
-            json.dumps(body.tags, ensure_ascii=False),
-            body.description,
-            json.dumps(body.keywords, ensure_ascii=False),
-            "user_posted", body.url, today, 1,
-        ),
-    )
-    con.commit()
-    con.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        cur = con.cursor()
+        max_id = cur.execute(
+            "SELECT COALESCE(MAX(id),9000) FROM jobs WHERE id >= 9000"
+        ).fetchone()[0]
+        new_id = max_id + 1
+        cur.execute(
+            "INSERT INTO jobs "
+            "(id,company,title,location,salary,type,tags,description,keywords,"
+            "source_type,url,created_at,is_active) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                new_id, body.company, body.title, body.location, body.salary, body.type,
+                json.dumps(body.tags, ensure_ascii=False),
+                body.description,
+                json.dumps(body.keywords, ensure_ascii=False),
+                "user_posted", body.url, today, 1,
+            ),
+        )
+        con.commit()
     return {
         "id": new_id, "status": "published",
         "company": body.company, "title": body.title,
@@ -1474,10 +1477,9 @@ async def post_job(body: JobPostRequest):
 @app.patch("/api/jobs/{job_id}", status_code=200)
 async def set_job_active(job_id: int, is_active: int = 1):
     """Set is_active=0 to close a job (filled), is_active=1 to reopen."""
-    con = sqlite3.connect(DB_PATH)
-    con.execute("UPDATE jobs SET is_active = ? WHERE id = ?", (is_active, job_id))
-    con.commit()
-    con.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.execute("UPDATE jobs SET is_active = ? WHERE id = ?", (is_active, job_id))
+        con.commit()
     return {"id": job_id, "is_active": is_active}
 
 
@@ -1707,7 +1709,9 @@ Based on the gap analysis, give 2-3 key areas or likely questions to prepare for
 
 
 @app.post("/api/generate-jd")
-async def generate_jd(body: GenerateJDRequest):
+@limiter.limit("5/minute")
+async def generate_jd(request: Request, body: GenerateJDRequest):
+    _ = request
     if not body.raw_text.strip():
         raise HTTPException(400, "raw_text is required")
     content = await _llm_chat(
@@ -1769,10 +1773,9 @@ async def _generate_full_jd(job: dict) -> str:
 @app.get("/api/jobs/{job_id}/jd")
 async def get_job_full_jd(job_id: int):
     """Return cached full JD or generate+cache it on first access."""
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    con.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Job not found")
 
@@ -1790,10 +1793,9 @@ async def get_job_full_jd(job_id: int):
 
     # For crawled / user_posted jobs: generate on-demand and cache
     jd = await _generate_full_jd(job)
-    con2 = sqlite3.connect(DB_PATH)
-    con2.execute("UPDATE jobs SET full_jd = ? WHERE id = ?", (jd, job_id))
-    con2.commit()
-    con2.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.execute("UPDATE jobs SET full_jd = ? WHERE id = ?", (jd, job_id))
+        con.commit()
     return {"jd": jd, "cached": False}
 
 
@@ -1841,10 +1843,9 @@ async def optimize_resume_for_job(
     lang = "zh" if accept_language.lower().startswith("zh") else "en"
 
     # Load job
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    con.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Job not found")
     job = dict(row)
@@ -1918,10 +1919,9 @@ async def hr_view_resume(
     """Stream an HR recruiter's inner monologue while reading the resume for a specific job."""
     lang = "zh" if accept_language.lower().startswith("zh") else "en"
 
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    con.close()
+    with closing(sqlite3.connect(DB_PATH)) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Job not found")
     job = dict(row)
