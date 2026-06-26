@@ -109,10 +109,14 @@
         <div class="tb-status">
           <template v-if="copilotPhase === 'generating'">
             <span class="hot-ring"></span>
-            <span style="color:#fb923c">AI 热写中… 桌宠可查看进度</span>
+            <span style="color:#fb923c">AI 热写中…</span>
+          </template>
+          <template v-else-if="copilotPhase === 'chatting'">
+            <span class="hot-ring" style="border-top-color:#10b981"></span>
+            <span style="color:#34d399">AI 修改中… 右侧实时预览</span>
           </template>
           <template v-else-if="copilotPhase === 'done'">
-            <span style="color:#34d399">✓ 生成完成 — 右侧直接编辑</span>
+            <span style="color:#34d399">✓ 生成完成 — 右侧编辑 或 继续对话桌宠改简历</span>
           </template>
           <template v-else>
             <span style="color:#818cf8">🧠 AI 教练追问中 — 点击右下角桌宠回答问题</span>
@@ -148,11 +152,14 @@
             <span v-if="copilotPhase==='generating'" class="live-badge">
               <span class="live-dot"></span>LIVE
             </span>
+            <span v-else-if="copilotPhase==='chatting'" class="live-badge" style="border-color:rgba(16,185,129,.3);color:#6ee7b7;background:rgba(16,185,129,.1)">
+              <span class="live-dot" style="background:#34d399"></span>修改中
+            </span>
             <span v-else-if="copilotPhase==='done'" class="edit-badge">编辑模式</span>
             <span v-else class="wait-badge">等待确认</span>
           </div>
 
-          <!-- Idle / questioning placeholder -->
+          <!-- Idle / questioning placeholder (not shown during chatting) -->
           <div v-if="['questioning','idle','analyzing','ready'].includes(copilotPhase)" class="ws-waiting">
             <div class="waiting-ico">💬</div>
             <div class="waiting-title">AI 桌宠正在追问</div>
@@ -162,13 +169,13 @@
             </div>
           </div>
 
-          <!-- Streaming view (shown during generation) -->
-          <div v-show="copilotPhase === 'generating'" ref="streamEl" class="stream-wrap">
+          <!-- Streaming view (initial generation OR chat-triggered rewrite) -->
+          <div v-show="copilotPhase === 'generating' || copilotPhase === 'chatting'" ref="streamEl" class="stream-wrap">
             <div class="stream-content" v-html="safeStreamHtml"></div>
             <span class="cursor-blink">▌</span>
           </div>
 
-          <!-- WangEditor (shown when done) -->
+          <!-- WangEditor (shown only when fully done and not being rewritten) -->
           <div v-show="copilotPhase === 'done'" class="editor-outer">
             <Toolbar class="we-toolbar" :editor="editorRef" :defaultConfig="toolbarConfig" mode="default" />
             <Editor class="we-editor" v-model="editorHtml" :defaultConfig="editorConfig"
@@ -350,14 +357,72 @@ function pushAi(text) {
 
 // ── Copilot event handlers ────────────────────────────────────────────
 function onCopilotSend(text) {
-  copilotMessages.value.push({
-    id: `user-${Date.now()}`, role: 'user', text,
-  })
+  copilotMessages.value.push({ id: `user-${Date.now()}`, role: 'user', text })
+
+  // In 'done' mode: treat every message as a live edit instruction
+  if (copilotPhase.value === 'done') {
+    chatEdit(text)
+    return
+  }
+
+  // Otherwise advance Q&A
   const qs  = analysis.value.questions
   const idx = copilotQIndex.value
   if (idx < qs.length) {
     copilotAnswers.value[qs[idx].id] = text.slice(0, 500)
     setTimeout(() => askQuestion(idx + 1), 400)
+  }
+}
+
+// ── Chat-driven live rewrite ──────────────────────────────────────────
+async function chatEdit(instruction) {
+  if (!editorRef.value) return
+  copilotPhase.value = 'chatting'
+  streamedHtml.value = ''
+  pushAi(`收到！正在根据你的指令修改简历… ✍️`)
+
+  const currentHtml = editorRef.value.getHtml()
+  try {
+    const fd = new FormData()
+    fd.append('current_html', currentHtml)
+    fd.append('instruction',  instruction.slice(0, 500))
+    fd.append('jd_text',      jdText.value.slice(0, 3000))
+
+    const resp = await fetch(`${API_BASE}/api/resume-chat-edit`, {
+      method: 'POST',
+      headers: { 'Accept-Language': 'zh-CN' },
+      body: fd,
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+
+    const reader = resp.body.getReader()
+    const dec    = new TextDecoder()
+    let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split('\n'); buf = lines.pop() || ''
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        let obj; try { obj = JSON.parse(line.slice(6)) } catch { continue }
+        if (obj.type === 'chunk') {
+          streamedHtml.value += obj.text
+          await nextTick()
+          if (streamEl.value) streamEl.value.scrollTop = streamEl.value.scrollHeight
+        } else if (obj.type === 'done') {
+          copilotPhase.value = 'done'
+          pushAi('✅ 修改完成！你可以继续说"把教育经历换个格式"之类的指令，或导出 PDF / Word。')
+        } else if (obj.type === 'error') {
+          throw new Error(obj.message)
+        }
+      }
+    }
+    if (copilotPhase.value !== 'done') copilotPhase.value = 'done'
+  } catch (e) {
+    err.value = e.message
+    copilotPhase.value = 'done'
+    pushAi(`❌ 修改失败：${e.message}，请重试。`)
   }
 }
 
@@ -419,8 +484,9 @@ async function streamOptimize() {
 // ── WangEditor ────────────────────────────────────────────────────────
 function handleCreated(editor) { editorRef.value = editor }
 
-watch(copilotPhase, async (val) => {
-  if (val === 'done' && editorRef.value) {
+watch(copilotPhase, async (val, prev) => {
+  // Inject streamed HTML into editor whenever we exit a streaming phase
+  if (val === 'done' && (prev === 'generating' || prev === 'chatting') && editorRef.value) {
     await nextTick()
     editorRef.value.setHtml(streamedHtml.value || '<p>（未生成内容，请重试）</p>')
   }

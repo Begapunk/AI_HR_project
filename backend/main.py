@@ -2827,3 +2827,87 @@ async def resume_optimize_final(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── 桌宠实时对话改写简历 ────────────────────────────────────────────────────────
+
+_HTML_MAX_CHARS = 20000   # current editor HTML (already sanitized on client side)
+
+@app.post("/api/resume-chat-edit")
+@limiter.limit("5/minute")
+async def resume_chat_edit(
+    request: Request,  # consumed by @limiter.limit
+    current_html: str = Form(...),
+    instruction: str = Form(...),
+    jd_text: str = Form(default=""),
+    accept_language: str = Header(default="zh-CN"),
+):
+    """Stream-rewrite the current resume HTML according to a user chat instruction."""
+    _ = request
+    lang = "zh" if accept_language.lower().startswith("zh") else "en"
+
+    # ── Hard payload limits ──────────────────────────────────────────
+    if len(instruction.strip()) == 0:
+        raise HTTPException(400, "instruction 不能为空")
+    if len(instruction) > _ANS_MAX_CHARS:
+        raise HTTPException(413, "指令超过 500 字符限制" if lang == "zh" else "Instruction exceeds 500-char limit")
+    if len(current_html) > _HTML_MAX_CHARS:
+        raise HTTPException(413, "简历 HTML 超过 20000 字符限制" if lang == "zh" else "Resume HTML too large")
+
+    safe_html        = _sanitize_input(current_html[:_HTML_MAX_CHARS])
+    safe_instruction = _sanitize_input(instruction.strip()[:_ANS_MAX_CHARS])
+    safe_jd          = _sanitize_input(jd_text.strip()[:_JD_MAX_CHARS]) if jd_text.strip() else ""
+
+    if lang == "zh":
+        system = (
+            "你是一位专业的简历编辑专家，根据用户的修改指令精准改写简历 HTML。\n"
+            "规则：\n"
+            "1. 只修改用户指令涉及的部分，其余内容原样保留\n"
+            "2. 输出完整的修改后 HTML body 内容（无 html/head/body 外层标签）\n"
+            "3. 使用 h1/h2/h3/p/ul/li/strong 语义化标签，无 style 属性\n"
+            "4. 绝对不捏造任何事实，只在现有信息基础上优化表达\n"
+            "5. 被 AI 修改的条目末尾加 ✨ 标记\n"
+            + _SECURITY_PREAMBLE_ZH
+        )
+        jd_block = f"\n<jd_context>\n{safe_jd}\n</jd_context>" if safe_jd else ""
+        user_msg = (
+            f"<current_resume_html>\n{safe_html}\n</current_resume_html>"
+            f"{jd_block}\n\n"
+            f"<user_instruction>\n{safe_instruction}\n</user_instruction>\n\n"
+            "请按照修改指令，输出完整的修改后 HTML 简历内容。"
+        )
+    else:
+        system = (
+            "You are a professional resume editor. Precisely rewrite the resume HTML per the user's instruction.\n"
+            "Rules:\n"
+            "1. Only change what the instruction specifies — leave the rest intact\n"
+            "2. Output complete modified HTML body content (no html/head/body wrapper tags)\n"
+            "3. Use h1/h2/h3/p/ul/li/strong semantic tags, no style attributes\n"
+            "4. Never fabricate facts — only improve expression of existing content\n"
+            "5. Add ✨ after each AI-modified bullet\n"
+            + _SECURITY_PREAMBLE_EN
+        )
+        jd_block = f"\n<jd_context>\n{safe_jd}\n</jd_context>" if safe_jd else ""
+        user_msg = (
+            f"<current_resume_html>\n{safe_html}\n</current_resume_html>"
+            f"{jd_block}\n\n"
+            f"<user_instruction>\n{safe_instruction}\n</user_instruction>\n\n"
+            "Output the complete modified HTML resume as instructed."
+        )
+
+    async def generate_chat() -> AsyncGenerator[str, None]:
+        try:
+            yield f"data: {json.dumps({'type': 'status', 'text': '正在修改…' if lang == 'zh' else 'Editing…'})}\n\n"
+            async for chunk in _llm_chat_stream(
+                system=system, user_message=user_msg, max_tokens=4096, temperature=0.35
+            ):
+                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate_chat(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

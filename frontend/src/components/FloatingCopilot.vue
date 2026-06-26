@@ -79,8 +79,33 @@
                 AI 正在写入简历…右侧实时更新
               </div>
             </template>
+            <template v-else-if="phase === 'chatting'">
+              <div class="fc-generating-hint">
+                <span class="fc-gen-ring" style="border-top-color:#10b981"></span>
+                <span style="color:#34d399">AI 修改中… 右侧实时预览</span>
+              </div>
+            </template>
             <template v-else-if="phase === 'done'">
-              <div class="fc-done-hint">✓ 简历生成完成，右侧可直接编辑</div>
+              <!-- Chat mode: user can keep sending edit instructions -->
+              <div class="fc-chat-mode-tip">简历已生成，继续指挥 AI 修改 ↓</div>
+              <div class="fc-input-wrap" :class="{ focused: taFocus }">
+                <textarea
+                  ref="taRef"
+                  v-model="draft"
+                  class="fc-ta"
+                  :placeholder="inputPlaceholder"
+                  :maxlength="500"
+                  rows="2"
+                  @focus="taFocus = true"
+                  @blur="taFocus = false"
+                  @keydown.enter.exact.prevent="sendDraft"
+                  @keydown.enter.shift.exact.prevent="draft += '\n'"
+                />
+                <button class="fc-send-btn" :disabled="!draft.trim()" @click="sendDraft">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+              <div class="fc-hint">Enter 发送 · 例：把第二段经历改得更量化</div>
             </template>
           </div>
         </div>
@@ -96,7 +121,7 @@ import DOMPurify from 'dompurify'
 
 const props = defineProps({
   messages:  { type: Array,  default: () => [] },
-  phase:     { type: String, default: 'idle' },    // idle | analyzing | questioning | ready | generating | done
+  phase:     { type: String, default: 'idle' },    // idle | analyzing | questioning | ready | generating | chatting | done
   loading:   { type: Boolean, default: false },
 })
 const emit = defineEmits(['send', 'confirm'])
@@ -125,9 +150,9 @@ const hasUnread = computed(() => props.messages.length > seenCount.value)
 const unreadCount = computed(() => props.messages.filter(m => m.role === 'ai').length - seenCount.value)
 
 const avatarIcon = computed(() => {
-  if (props.phase === 'generating') return '✍️'
-  if (props.phase === 'done')       return '✅'
-  if (props.phase === 'analyzing')  return '🔍'
+  if (props.phase === 'generating' || props.phase === 'chatting') return '✍️'
+  if (props.phase === 'done')      return '💬'
+  if (props.phase === 'analyzing') return '🔍'
   return '🧠'
 })
 
@@ -138,12 +163,17 @@ const phaseLabel = computed(() => {
     questioning: '事实追问',
     ready:       '确认生成',
     generating:  'AI 热写中…',
-    done:        '编辑模式',
+    chatting:    'AI 修改中…',
+    done:        '💬 实时对话改简历',
   }
   return map[props.phase] || 'AI 简历教练'
 })
 
-const inputPlaceholder = computed(() => '输入你的回答… (Enter 发送，Shift+Enter 换行)')
+const inputPlaceholder = computed(() =>
+  props.phase === 'done'
+    ? '告诉 AI 你想怎么改简历… (Enter 发送)'
+    : '输入你的回答… (Enter 发送，Shift+Enter 换行)'
+)
 
 // ── Open / close ───────────────────────────────────────────────────────
 function toggleOpen() {
@@ -155,9 +185,9 @@ function toggleOpen() {
   }
 }
 
-// Auto-open when questioning phase starts
+// Auto-open when questioning starts or generation completes
 watch(() => props.phase, (val) => {
-  if (val === 'questioning') open.value = true
+  if (val === 'questioning' || val === 'done') open.value = true
 })
 
 // Scroll to bottom when new messages arrive
@@ -389,6 +419,10 @@ function renderText(text) {
   padding: 4px 0;
 }
 .fc-done-hint { color: #34d399; }
+.fc-chat-mode-tip {
+  font-size: .7rem; color: #475569; text-align: center;
+  margin-bottom: 7px; letter-spacing: .01em;
+}
 .fc-gen-ring {
   width: 14px; height: 14px; flex-shrink: 0;
   border: 2px solid rgba(251,146,60,.3); border-top-color: #fb923c;
