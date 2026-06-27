@@ -287,10 +287,10 @@
             <span class="qd-ico">🎯</span>
             <div>
               <div class="qd-title">{{ locale === 'zh' ? '候选人分布四象限图' : 'Candidate Quadrant Map' }}</div>
-              <div class="qd-hint">{{ locale === 'zh' ? '右上角象限为优先推荐区，悬浮散点查看详情' : 'Top-right quadrant = priority zone. Hover for details.' }}</div>
+              <div class="qd-hint">{{ locale === 'zh' ? '右上角象限为优先推荐区，点击散点可预览简历' : 'Top-right quadrant = priority zone. Click a dot to preview.' }}</div>
             </div>
           </div>
-          <v-chart class="qd-chart" :option="quadrantOption" autoresize />
+          <v-chart class="qd-chart" :option="quadrantOption" autoresize @click="onChartClick" style="cursor:pointer" />
         </div>
 
         <!-- Cutoff analysis -->
@@ -316,7 +316,7 @@
               <div class="cc-top">
                 <div class="cc-rank">#{{ c.rank < 999 ? c.rank : '—' }}</div>
                 <div class="cc-info">
-                  <div class="cc-name">{{ c.name || c.raw_filename }}</div>
+                  <div class="cc-name cc-name-link" @click.stop="openPreview(c)" :title="locale === 'zh' ? '点击预览简历' : 'Click to preview resume'">{{ c.name || c.raw_filename }}</div>
                   <div class="cc-file">{{ c.raw_filename }}</div>
                   <div v-if="c.rank_reason" class="cc-reason">{{ c.rank_reason }}</div>
                 </div>
@@ -376,12 +376,20 @@
     </div>
   </div><!-- /bm-scroll -->
   </div>
+
+  <!-- Preview Drawer (teleports to body, lives outside the scroll container) -->
+  <ResumePreviewDrawer
+    v-model="previewOpen"
+    :candidate="previewCandidate"
+    :file="previewCandidate ? fileMap[previewCandidate.raw_filename] : null"
+  />
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import VChart from 'vue-echarts'
+import ResumePreviewDrawer from './ResumePreviewDrawer.vue'
 
 const emit = defineEmits(['close'])
 const { locale } = useI18n()
@@ -590,7 +598,7 @@ const quadrantOption = computed(() => {
     const x = sb.skill_match ?? null
     const y = sb.education_fit ?? null
     if (x === null || y === null) continue
-    const pt = { name: c.name || c.raw_filename, value: [x, y, c.overall_score] }
+    const pt = { name: c.name || c.raw_filename, value: [x, y, c.overall_score], resumeId: c.resume_id }
     if (x >= threshold && y >= threshold) q1.push(pt)
     else rest.push(pt)
   }
@@ -710,6 +718,31 @@ function handleClose() {
   } else {
     emit('close')
   }
+}
+
+// ── Preview Drawer ────────────────────────────────────────────
+const previewOpen = ref(false)
+const previewCandidate = ref(null)
+
+// filename → File object map (built from step-1 uploads, lives in memory)
+const fileMap = computed(() => {
+  const m = {}
+  files.value.forEach(f => { m[f.name] = f })
+  return m
+})
+
+function openPreview(candidate) {
+  previewCandidate.value = candidate
+  previewOpen.value = true
+}
+
+function onChartClick(params) {
+  if (params.componentType !== 'series') return
+  const id = params.data?.resumeId
+  const c = id
+    ? candidates.value.find(c => c.resume_id === id)
+    : candidates.value.find(c => (c.name || c.raw_filename) === params.data?.name)
+  if (c) openPreview(c)
 }
 </script>
 
@@ -1060,6 +1093,8 @@ function handleClose() {
 }
 .cc-info { flex: 1; min-width: 0; }
 .cc-name { font-size: .9rem; font-weight: 700; color: #f1f5f9; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-name-link { cursor: pointer; transition: color .15s, text-shadow .15s; }
+.cc-name-link:hover { color: #818cf8; text-shadow: 0 0 12px rgba(129,140,248,.5); text-decoration: underline; text-underline-offset: 3px; }
 .cc-file { font-size: .72rem; color: #475569; margin-top: 2px; }
 .cc-reason { font-size: .76rem; color: #a78bfa; margin-top: 4px; font-style: italic; line-height: 1.5; }
 .cc-score-wrap { text-align: right; flex-shrink: 0; }
