@@ -2067,7 +2067,7 @@ async def _score_candidate_llm(
 ) -> dict | None:
     """Stage B: Score one candidate with LLM. Returns parsed dict or None."""
     system = _SCORE_SYSTEM_ZH if lang == "zh" else _SCORE_SYSTEM_EN
-    safe_resume = _sanitize_input(resume_text[:2000])
+    safe_resume = _sanitize_input(resume_text[:4000])
     safe_jd = _sanitize_input(jd_text[:2000])
     must_str = ", ".join(must_skills) if must_skills else ("无特殊要求" if lang == "zh" else "None specified")
     plus_str = ", ".join(plus_skills) if plus_skills else ("无" if lang == "zh" else "None")
@@ -2089,7 +2089,7 @@ async def _score_candidate_llm(
             system=system,
             user_message=user_msg,
             max_tokens=600,
-            temperature=0.1,
+            temperature=0,
             timeout=30.0,
         )
         content = content.strip()
@@ -2285,11 +2285,15 @@ async def batch_match_resumes(
                         invalid_count += 1
                         continue
 
+                    text_len = len(resume_text.strip())
+                    low_quality = text_len < 300
                     parsed.append({
                         "resume_id": f"batch_{content_hash[:12]}",
                         "filename": fname,
                         "resume_text": resume_text,
                         "content_hash": content_hash,
+                        "low_quality": low_quality,
+                        "text_len": text_len,
                     })
                 except Exception as _exc:
                     _detail = _exc.detail if isinstance(_exc, HTTPException) else str(_exc)
@@ -2500,6 +2504,7 @@ async def batch_match_resumes(
                     "resume_id": c["resume_id"],
                     "raw_filename": c["filename"],
                     "_fallback": sb.get("_fallback", False),
+                    "low_quality": c.get("low_quality", False),
                 })
 
             # Append rejected as bottom entries

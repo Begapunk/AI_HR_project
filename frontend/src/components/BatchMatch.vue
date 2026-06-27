@@ -324,6 +324,7 @@
                   <div class="cc-score" :class="scoreClass(c.overall_score)">{{ c.overall_score }}<span class="cc-pct">%</span></div>
                   <div class="cc-badge" :class="`bdg-${tier}`">{{ tierBadges[tier] }}</div>
                   <div v-if="c._fallback" class="cc-fallback-badge">⚡ {{ locale === 'zh' ? '规则引擎' : 'Rule-based' }}</div>
+                  <div v-if="c.low_quality" class="cc-lowq-badge" :title="locale === 'zh' ? '简历文字提取内容过少，评分准确度较低（可能为图片型或扫描版PDF）' : 'Low text extraction — score may be inaccurate (scanned/image PDF?)'">⚠ {{ locale === 'zh' ? '识别不佳' : 'Low Extraction' }}</div>
                 </div>
               </div>
 
@@ -1069,6 +1070,7 @@ function handleClose() {
 .cc-pct { font-size: .75rem; }
 .cc-badge { font-size: .85rem; margin-top: 2px; }
 .cc-fallback-badge { font-size: .62rem; font-weight: 700; color: #f59e0b; margin-top: 2px; }
+.cc-lowq-badge { font-size: .62rem; font-weight: 700; color: #fb923c; margin-top: 2px; cursor: help; }
 
 /* ── Score bars ── */
 .cc-bars { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
